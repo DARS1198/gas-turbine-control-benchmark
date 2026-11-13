@@ -1,0 +1,191 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Gas turbine control benchmark: live demo</title>
+<meta name="description" content="Interactive simulator: four speed controllers on a gas-turbine model. Runs entirely in your browser.">
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: light-dark(#fafaf8, #15171a); --panel: light-dark(#ffffff, #1e2126);
+    --ink: light-dark(#1b1d21, #e8e9eb); --muted: light-dark(#5d6470, #9aa1ad);
+    --line: light-dark(#dcdfe4, #343941); --accent: light-dark(#0b5cad, #6cb2f5);
+    --droop: light-dark(#6b6b6b, #a9a9a9); --pid: light-dark(#0072B2, #56B4E9);
+    --fuzzy: light-dark(#b97c00, #E69F00); --mpc: light-dark(#D55E00, #ff8a3c);
+    --band: light-dark(rgba(0,140,60,.13), rgba(80,220,130,.16));
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 15px/1.5 system-ui, sans-serif; background: var(--bg); color: var(--ink); }
+  main { max-width: 1120px; margin: 0 auto; padding: 24px 16px 48px; }
+  h1 { font-size: 1.6rem; margin: 0 0 4px; }
+  h2 { font-size: 1rem; margin: 0 0 8px; }
+  p { margin: 0 0 12px; } .muted { color: var(--muted); } a { color: var(--accent); }
+  .grid { display: grid; grid-template-columns: 300px 1fr; gap: 16px; align-items: start; }
+  @media (max-width: 820px) { .grid { grid-template-columns: 1fr; } }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px; }
+  label { display: block; font-size: .85rem; margin: 10px 0 2px; }
+  label output { float: right; font-variant-numeric: tabular-nums; color: var(--muted); }
+  input[type=range], select { width: 100%; }
+  select { padding: 6px; border-radius: 6px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); font: inherit; }
+  fieldset { border: 0; padding: 0; margin: 12px 0 0; } legend { font-weight: 600; padding: 0; }
+  .checks label { display: inline-flex; gap: 6px; align-items: center; margin: 6px 12px 0 0; }
+  .swatch { width: 18px; height: 3px; display: inline-block; border-radius: 2px; }
+  button { margin-top: 12px; padding: 7px 12px; border-radius: 6px; border: 1px solid var(--line); background: transparent; color: var(--ink); font: inherit; cursor: pointer; }
+  canvas { width: 100%; display: block; } #cSpeed { height: 300px; } #cFuel { height: 190px; }
+  table { width: 100%; border-collapse: collapse; font-size: .88rem; font-variant-numeric: tabular-nums; }
+  th, td { text-align: right; padding: 5px 8px; border-bottom: 1px solid var(--line); }
+  th:first-child, td:first-child { text-align: left; }
+  .bad { color: #d33; font-weight: 600; }
+  #story { border-left: 3px solid var(--accent); padding-left: 12px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Gas turbine control benchmark: live demo</h1>
+  <p class="muted">A power-plant gas turbine must spin at exactly its rated speed (60 Hz) while the electrical load
+  changes. Four controllers try to hold it. Change the load, or make the turbine different from what the
+  controllers expect, and watch what happens. Everything runs in your browser.
+  <a href="https://github.com/DARS1198/gas-turbine-control-benchmark">Code, method and full results on GitHub.</a></p>
+
+  <div class="grid">
+    <div class="card">
+      <label for="scenario">What happens to the load</label>
+      <select id="scenario"></select>
+      <p id="plain" class="muted" style="font-size:.85rem;margin-top:6px"></p>
+      <div id="custom" hidden>
+        <label>Load before <output id="oFrom"></output><input id="from" type="range" min="0" max="1" step="0.05" value="0.4"></label>
+        <label>Load after <output id="oTo"></output><input id="to" type="range" min="0" max="1" step="0.05" value="0.9"></label>
+      </div>
+
+      <fieldset><legend>Controllers</legend>
+        <div class="checks" id="ctrls"></div>
+        <label for="mode">Tuning</label>
+        <select id="mode">
+          <option value="robust">Iteration 2: robust tuning (final)</option>
+          <option value="nominal">Iteration 1: tuned for the nominal turbine only</option>
+        </select>
+      </fieldset>
+
+      <fieldset><legend>Make the real turbine different</legend>
+        <label>Rotor time constant <output id="oTi"></output><input id="ti" type="range" min="8" max="40" step="0.2" value="15.6"></label>
+        <label>Fuel system lag <output id="oTf"></output><input id="tf" type="range" min="0.2" max="1.0" step="0.02" value="0.4"></label>
+        <label>Extra dead time <output id="oDelay"></output><input id="delay" type="range" min="0" max="0.6" step="0.01" value="0"></label>
+        <label>Speed sensor noise <output id="oNoise"></output><input id="noise" type="range" min="0" max="10" step="1" value="1"></label>
+      </fieldset>
+      <button id="reset">Reset to nominal turbine</button>
+    </div>
+
+    <div>
+      <div class="card">
+        <h2>Speed <span class="muted">(% of rated; green band = within ±0.1 %)</span></h2>
+        <canvas id="cSpeed"></canvas>
+        <h2 style="margin-top:14px">Fuel command <span class="muted">(what the controller asks of the fuel valve)</span></h2>
+        <canvas id="cFuel"></canvas>
+      </div>
+      <div class="card" style="margin-top:16px">
+        <table id="tbl"></table>
+        <p class="muted" style="font-size:.8rem;margin:8px 0 0">Peak deviation: worst speed error. Settling: time to stay inside the green band.
+        IAE: accumulated speed error (lower is better). Valve travel: how much the fuel valve moved in total (wear).</p>
+      </div>
+      <div class="card" style="margin-top:16px"><p id="story" style="margin:0"></p></div>
+    </div>
+  </div>
+</main>
+
+<script type="module">
+import { build, simulate, metrics } from "./sim.js";
+
+const $ = (id) => document.getElementById(id);
+const NAMES = ["Droop", "PID", "Fuzzy", "MPC"];
+// Resolve a CSS variable to a concrete colour (canvas cannot read light-dark() directly).
+const probe = document.body.appendChild(document.createElement("span"));
+const css = (v) => { probe.style.color = `var(${v})`; return getComputedStyle(probe).color; };
+const data = await (await fetch("./demo-data.json")).json();
+
+const scenarios = [...data.scenarios, { key: "custom", title: "Custom load step", plain: "Choose the load before and after the step.", duration: 40 }];
+$("scenario").innerHTML = scenarios.map((s) => `<option value="${s.key}">${s.title}</option>`).join("");
+$("ctrls").innerHTML = NAMES.map((n) =>
+  `<label><input type="checkbox" value="${n}" checked><span class="swatch" style="background:var(--${n.toLowerCase()})"></span>${n}</label>`).join("");
+
+function draw(canvas, series, { band, yPad = 0.05, steps } = {}) {
+  const dpr = window.devicePixelRatio || 1;
+  const w = canvas.clientWidth, h = canvas.clientHeight;
+  canvas.width = w * dpr; canvas.height = h * dpr;
+  const g = canvas.getContext("2d");
+  g.scale(dpr, dpr);
+  const m = { l: 52, r: 10, t: 8, b: 26 };
+  let lo = Infinity, hi = -Infinity;
+  for (const s of series) for (const v of s.y) { if (v < lo) lo = v; if (v > hi) hi = v; }
+  if (band) { lo = Math.min(lo, band[0]); hi = Math.max(hi, band[1]); }
+  const pad = Math.max((hi - lo) * yPad, 1e-3); lo -= pad; hi += pad;
+  const tMax = series[0].t[series[0].t.length - 1];
+  const X = (t) => m.l + ((w - m.l - m.r) * t) / tMax;
+  const Y = (v) => m.t + (h - m.t - m.b) * (1 - (v - lo) / (hi - lo));
+  g.font = "11px system-ui"; g.fillStyle = css("--muted"); g.strokeStyle = css("--line"); g.lineWidth = 1;
+  const stepY = [0.01, 0.02, 0.05, 0.1, 0.2, 0.25, 0.5, 1, 2, 5].find((s) => (hi - lo) / s <= 7) || 10;
+  g.textAlign = "right"; g.textBaseline = "middle";
+  for (let v = Math.ceil(lo / stepY) * stepY; v <= hi; v += stepY) {
+    g.beginPath(); g.moveTo(m.l, Y(v)); g.lineTo(w - m.r, Y(v)); g.stroke();
+    g.fillText(v.toFixed(stepY < 0.1 ? 2 : stepY < 1 ? 1 : 0), m.l - 6, Y(v));
+  }
+  g.textAlign = "center"; g.textBaseline = "top";
+  for (let t = 0; t <= tMax; t += tMax > 50 ? 10 : 5) g.fillText(`${t} s`, X(t), h - m.b + 6);
+  if (band) { g.fillStyle = css("--band"); g.fillRect(m.l, Y(band[1]), w - m.l - m.r, Y(band[0]) - Y(band[1])); }
+  if (steps) { g.setLineDash([3, 3]); for (const t of steps) { g.beginPath(); g.moveTo(X(t), m.t); g.lineTo(X(t), h - m.b); g.stroke(); } g.setLineDash([]); }
+  for (const s of series) {
+    g.strokeStyle = css(`--${s.name.toLowerCase()}`); g.lineWidth = s.name === "MPC" ? 2.4 : 1.7;
+    g.setLineDash(s.name === "Droop" ? [5, 3] : s.name === "Fuzzy" ? [9, 2, 2, 2] : []);
+    g.beginPath();
+    s.y.forEach((v, i) => (i ? g.lineTo(X(s.t[i]), Y(Math.max(lo, Math.min(hi, v)))) : g.moveTo(X(s.t[i]), Y(v))));
+    g.stroke();
+  }
+  g.setLineDash([]);
+}
+
+const fmt = (v, d = 2) => (Number.isNaN(v) ? "never" : v.toFixed(d));
+
+function run() {
+  const key = $("scenario").value;
+  const sc = { ...scenarios.find((s) => s.key === key) };
+  $("custom").hidden = key !== "custom";
+  if (key === "custom") sc.loadSteps = [[0, +$("from").value], [5, +$("to").value]];
+  $("plain").textContent = sc.plain;
+  const noiseMult = +$("noise").value;
+  sc.noiseStd = 1e-4 * noiseMult;
+  const params = { tI: +$("ti").value, tF: +$("tf").value, extraDelay: +$("delay").value };
+  $("oFrom").value = (+$("from").value).toFixed(2) + " pu"; $("oTo").value = (+$("to").value).toFixed(2) + " pu";
+  $("oTi").value = params.tI.toFixed(1) + " s"; $("oTf").value = params.tF.toFixed(2) + " s";
+  $("oDelay").value = params.extraDelay.toFixed(2) + " s"; $("oNoise").value = noiseMult + "× normal";
+  const mode = data.modes[$("mode").value];
+  const active = [...document.querySelectorAll("#ctrls input:checked")].map((c) => c.value);
+  const last = sc.loadSteps[sc.loadSteps.length - 1][0];
+  const results = active.map((name) => {
+    const r = simulate(build(name, mode), sc, params);
+    return { name, r, m: metrics(r, last) };
+  });
+  if (!results.length) return;
+  const steps = sc.loadSteps.slice(1).map((s) => s[0]);
+  // Clamp the plotted range so an unstable controller does not flatten the others.
+  draw($("cSpeed"), results.map(({ name, r }) => ({ name, t: r.t, y: r.speed.map((s) => Math.max(90, Math.min(112, 100 * s))) })), { band: [99.9, 100.1], steps });
+  draw($("cFuel"), results.map(({ name, r }) => ({ name, t: r.t, y: r.vce })), { steps });
+  $("tbl").innerHTML = "<tr><th>Controller</th><th>Peak deviation [%]</th><th>Settling [s]</th><th>IAE [%·s]</th><th>Valve travel [pu]</th><th>Verdict</th></tr>" +
+    results.map(({ name, m }) => `<tr><td><span class="swatch" style="background:var(--${name.toLowerCase()})"></span> ${name}</td><td>${fmt(m.peak)}</td><td>${fmt(m.settling, 1)}</td><td>${fmt(m.iae)}</td><td>${fmt(m.travel)}</td><td class="${m.stable ? "" : "bad"}">${m.stable ? (Number.isNaN(m.settling) ? "stable, not settled" : "ok") : "unstable"}</td></tr>`).join("");
+  const unstable = results.filter((x) => !x.m.stable).map((x) => x.name);
+  const nominalPlant = Math.abs(params.tI - 15.6) < 0.3 && Math.abs(params.tF - 0.4) < 0.01 && params.extraDelay === 0;
+  $("story").textContent = unstable.length
+    ? `${unstable.join(", ")} ${unstable.length > 1 ? "are" : "is"} unstable here: the speed keeps swinging or trips. ` +
+      ($("mode").value === "nominal" ? "This is the weakness of tuning only for the nominal turbine. Switch to the robust tuning and compare." : "Even the robust tuning has a limit; this turbine is far outside the range it was designed for.")
+    : nominalPlant
+      ? "Nominal turbine. Droop is stable but leaves the speed off target; PID, Fuzzy and MPC bring it back. Now try the iteration 1 tuning and add 0.25 s of extra dead time."
+      : "The turbine no longer matches the model the controllers were designed with, and they still cope. Push the sliders further to find where each one breaks.";
+}
+
+document.querySelectorAll("select, input").forEach((el) => el.addEventListener("input", run));
+$("reset").addEventListener("click", () => { $("ti").value = 15.6; $("tf").value = 0.4; $("delay").value = 0; $("noise").value = 1; run(); });
+window.addEventListener("resize", run);
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", run);
+run();
+</script>
+</body>
+</html>
