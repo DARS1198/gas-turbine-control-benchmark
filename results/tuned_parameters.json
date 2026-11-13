@@ -1,0 +1,68 @@
+{
+  "nominal": {
+    "PID": {
+      "params": {
+        "kp": 27.812,
+        "ki": 9.7932,
+        "kd": 0.0025604
+      },
+      "cost": 4.578842185440415,
+      "nominal_cost": 4.578842185440415,
+      "evaluations": 900
+    },
+    "Fuzzy": {
+      "params": {
+        "ke": 51.863,
+        "kde": 1.0368,
+        "ku": 0.64115,
+        "ki": 10.339,
+        "warp": 0.5193
+      },
+      "cost": 4.51574889481905,
+      "nominal_cost": 4.51574889481905,
+      "evaluations": 2850
+    },
+    "MPC": {
+      "params": {
+        "move_penalty": 0.00082929,
+        "dist_cov": 2.263e-07
+      },
+      "cost": 2.3209651552794632,
+      "nominal_cost": 2.3209651552794632,
+      "evaluations": 390
+    }
+  },
+  "robust": {
+    "PID": {
+      "params": {
+        "kp": 18.939,
+        "ki": 6.633,
+        "kd": 6.8423
+      },
+      "cost": 8.738040878843865,
+      "nominal_cost": 7.99669695774786,
+      "evaluations": 1125
+    },
+    "Fuzzy": {
+      "params": {
+        "ke": 27.998,
+        "kde": 10.197,
+        "ku": 1.0855,
+        "ki": 7.8116,
+        "warp": 0.31914
+      },
+      "cost": 8.571958024135572,
+      "nominal_cost": 7.65642600039431,
+      "evaluations": 3075
+    },
+    "MPC": {
+      "params": {
+        "move_penalty": 1.2592e-05,
+        "dist_cov": 3.434e-09
+      },
+      "cost": 6.121287471024303,
+      "nominal_cost": 5.1836325785387665,
+      "evaluations": 330
+    }
+  }
+}
