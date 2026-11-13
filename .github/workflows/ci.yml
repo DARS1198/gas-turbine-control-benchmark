@@ -1,0 +1,32 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.10", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - run: pip install -e ".[dev]"
+      - name: Lint
+        run: |
+          ruff check .
+          ruff format --check .
+      - name: Python tests
+        run: pytest -q
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: JavaScript demo matches Python
+        run: node --test tests/js/parity.test.mjs
+      - name: Benchmark runs end to end
+        run: gtbench run --out /tmp/results
